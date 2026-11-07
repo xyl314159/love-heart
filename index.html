@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>心动</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="心动" />
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; }
+  body {
+    background: radial-gradient(circle at 50% 38%, #3a0010 0%, #140003 60%, #080001 100%);
+    display:flex; justify-content:center; align-items:center;
+    font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    touch-action:none; user-select:none; -webkit-user-select:none;
+  }
+  canvas { display:block; position:fixed; inset:0; }
+  .line {
+    position:fixed; left:0; width:100%; text-align:center; pointer-events:none;
+    color:#ffe4ea; font-weight:700; letter-spacing:3px;
+    text-shadow:0 0 24px rgba(255,80,110,.75), 0 0 56px rgba(210,30,60,.45);
+    opacity:0; transform:translateY(14px);
+    transition:opacity .7s ease, transform .7s cubic-bezier(.2,.7,.3,1);
+    font-size:clamp(30px,7.5vw,52px);
+  }
+  .line.show { opacity:1; transform:translateY(0); }
+  #line1 { top:14%; }
+  #line2 { top:calc(14% + clamp(30px,7.5vw,52px) + 14px); }
+  #authorText {
+    position:fixed; bottom:11%; left:0; width:100%; text-align:center;
+    font-size:clamp(14px,3.6vw,22px); color:rgba(255,190,205,.62);
+    opacity:0; letter-spacing:2px; transition:opacity .9s ease; pointer-events:none;
+  }
+  #authorText.show { opacity:1; }
+  #musicHint {
+    position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    color:rgba(255,210,220,.45); font-size:12px; letter-spacing:3px;
+    pointer-events:none; text-align:center; line-height:1.6;
+  }
+  #musicBtn {
+    position:fixed; top:14px; right:16px; z-index:30;
+    width:44px; height:44px; border-radius:50%;
+    background:rgba(255,255,255,.1); border:1px solid rgba(255,180,195,.35);
+    color:#ffd6dd; font-size:20px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; backdrop-filter:blur(4px);
+  }
+  #musicBtn.off { opacity:.55; }
+  #stageTip {
+    position:fixed; bottom:5%; left:50%; transform:translateX(-50%);
+    color:rgba(255,200,210,.3); font-size:12px; letter-spacing:4px;
+    pointer-events:none; text-align:center;
+  }
+  /* 设置面板 */
+  #setupMask {
+    position:fixed; inset:0; z-index:40; display:none;
+    background:rgba(10,0,3,.72); backdrop-filter:blur(6px);
+    align-items:center; justify-content:center; padding:24px;
+  }
+  #setupMask.show { display:flex; }
+  .panel {
+    width:100%; max-width:340px; background:linear-gradient(180deg,#2b0010,#160006);
+    border:1px solid rgba(255,120,150,.3); border-radius:20px; padding:22px 20px;
+    color:#ffe4ea; box-shadow:0 20px 60px rgba(0,0,0,.5);
+  }
+  .panel h3 { font-size:17px; margin-bottom:14px; text-align:center; letter-spacing:2px; }
+  .panel label { font-size:13px; color:rgba(255,200,210,.7); }
+  .panel input {
+    width:100%; margin:8px 0 16px; padding:12px 14px; border-radius:12px;
+    border:1px solid rgba(255,120,150,.35); background:rgba(0,0,0,.35);
+    color:#fff; font-size:16px; outline:none; font-family:inherit;
+  }
+  .panel input:focus { border-color:#ff5b7d; }
+  .panel .row { display:flex; gap:10px; }
+  .panel button {
+    flex:1; padding:12px; border-radius:12px; border:none; font-size:15px;
+    font-family:inherit; cursor:pointer; letter-spacing:1px;
+  }
+  #btnSave { background:linear-gradient(135deg,#ff4d70,#e01440); color:#fff; }
+  #btnCancel { background:rgba(255,255,255,.12); color:#ffd6dd; }
+  .panel .note { font-size:11px; color:rgba(255,190,205,.45); line-height:1.6; margin-top:6px; }
+</style>
+</head>
+<body>
+
+<canvas id="heartCanvas"></canvas>
+
+<div id="line1" class="line"></div>
+<div id="line2" class="line"></div>
+<div id="authorText"></div>
+
+<div id="musicHint">🎵 背景音乐已自动播放<br>若未响起，点右上角音符</div>
+<button id="musicBtn" title="音乐开关">🎵</button>
+
+<div id="stageTip">轻触爱心 · 说出心意　|　长按可修改告白</div>
+
+<!-- 设置面板 -->
+<div id="setupMask">
+  <div class="panel">
+    <h3>✍️ 编辑你的告白</h3>
+    <label>第一段（先出现）</label>
+    <input id="in1" maxlength="20" placeholder="我喜欢你" />
+    <label>第二段（再出现）</label>
+    <input id="in2" maxlength="20" placeholder="做我女朋友好不好" />
+    <label>署名（可选）</label>
+    <input id="in3" maxlength="14" placeholder="—— 来自你的某某" />
+    <div class="row">
+      <button id="btnCancel">取消</button>
+      <button id="btnSave">保存</button>
+    </div>
+    <div class="note">留空则恢复默认文案。保存到本机，下次打开自动生效。</div>
+  </div>
+</div>
+
+<!-- 背景音乐：用一段纯 JS 合成的旋律，无需任何外部音频文件，离线也能响 -->
+<script>
+/* ================= 文案配置（可改） ================= */
+const STORE_KEY = 'heart_conf_v1';
+const DEF = { l1:'我喜欢你', l2:'做我女朋友好不好', author:'—— 一份藏在心里的告白' };
+let conf = (() => {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (s && typeof s === 'object') return { l1:s.l1||DEF.l1, l2:s.l2||DEF.l2, author:s.author||DEF.author };
+  } catch(e){}
+  return Object.assign({}, DEF);
+})();
+
+/* ================= 画布 ================= */
+const canvas = document.getElementById('heartCanvas');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy, baseScale;
+function resize(){
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W/2; cy = H*0.50;
+  baseScale = Math.min(W,H) * 0.175;
+}
+resize(); window.addEventListener('resize', resize);
+
+/* ================= 心形参数方程 ================= */
+function heartPoints(t){
+  const s=Math.sin(t), c=Math.cos(t);
+  return { x:16*s*s*s, y:13*c - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t) };
+}
+
+/* ================= 状态 ================= */
+// stage: 0=初始  1=第一段  2=第二段(最终)
+let stage = 0;
+let reveal = 0;      // 当前段描边进度 0~1
+let beatPhase = 0;
+let glowIntensity = 0.8;
+let particles = [];
+
+class Particle{
+  constructor(x,y){
+    const a = Math.random()*Math.PI*2, sp = 1.2+Math.random()*4.5;
+    this.x=x; this.y=y;
+    this.vx=Math.cos(a)*sp; this.vy=Math.sin(a)*sp-1.6;
+    this.life=1; this.decay=0.008+Math.random()*0.016;
+    this.size=2+Math.random()*6;
+    this.hue=338+Math.random()*32;
+  }
+  update(){ this.x+=this.vx; this.y+=this.vy; this.vy+=0.055; this.life-=this.decay; this.size*=0.99; }
+  draw(c){
+    if(this.life<=0) return;
+    c.globalAlpha=this.life*0.85;
+    c.fillStyle=`hsl(${this.hue},92%,${58+32*this.life}%)`;
+    c.beginPath(); c.arc(this.x,this.y,this.size,0,Math.PI*2); c.fill();
+    c.globalAlpha=1;
+  }
+}
+function burst(x,y,n){ for(let i=0;i<n;i++) particles.push(new Particle(x,y)); }
+
+/* ================= 绘制心形 ================= */
+function drawHeart(scale, progress){
+  ctx.save();
+  ctx.shadowColor='rgba(255,72,110,.55)';
+  ctx.shadowBlur=38*glowIntensity;
+  const g=ctx.createRadialGradient(cx-scale*0.25,cy-scale*0.35,4,cx,cy,scale*1.05);
+  g.addColorStop(0,'#ff8497'); g.addColorStop(.4,'#ff3f63');
+  g.addColorStop(.8,'#c9133e'); g.addColorStop(1,'#8f0026');
+
+  const steps=Math.max(6, Math.floor(140*progress));
+  ctx.beginPath();
+  for(let i=0;i<=steps;i++){
+    const p=heartPoints((i/140)*Math.PI*2);
+    const px=cx+p.x*scale, py=cy-p.y*scale;
+    i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+  ctx.fillStyle=g; ctx.fill();
+
+  // 高光描边
+  ctx.shadowBlur=0; ctx.globalAlpha=.32;
+  ctx.beginPath();
+  for(let i=0;i<=steps;i++){
+    const p=heartPoints((i/140)*Math.PI*2);
+    const px=cx+p.x*scale, py=cy-p.y*scale;
+    i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+  ctx.strokeStyle='#fff9fb'; ctx.lineWidth=2; ctx.stroke();
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+/* ================= 文字 DOM ================= */
+const el1=document.getElementById('line1'), el2=document.getElementById('line2'),
+      elA=document.getElementById('authorText');
+
+function setText(el, txt){ el.textContent = txt || '\u00a0'; }
+
+function applyStage(){
+  // 第一段
+  if(stage>=1){ setText(el1, conf.l1); el1.classList.add('show'); }
+  else { el1.classList.remove('show'); setText(el1,''); }
+  // 第二段
+  if(stage>=2){ setText(el2, conf.l2); el2.classList.add('show'); elA.textContent=conf.author; elA.classList.add('show'); }
+  else { el2.classList.remove('show'); elA.classList.remove('show'); setText(el2,''); }
+}
+
+/* ================= 主循环 ================= */
+function animate(){
+  ctx.clearRect(0,0,W,H);
+
+  beatPhase+=0.03;
+  // 第二段出现时心跳更强
+  const beat = stage>=2 ? (1+0.07*Math.pow(Math.sin(beatPhase*2),2))
+                        : (1+0.045*Math.pow(Math.sin(beatPhase*2),2));
+  const scale=baseScale*beat;
+
+  // 描边进度：进入新段时从0展开，离开时反向收回
+  if(stage>0 && reveal<1) reveal=Math.min(reveal+0.022,1);
+  else if(stage===0 && reveal>0) reveal=Math.max(reveal-0.04,0);
+
+  if(reveal>0.02) drawHeart(scale, reveal);
+
+  glowIntensity=0.6+0.28*(0.5+0.5*Math.sin(beatPhase*1.4));
+
+  for(let i=particles.length-1;i>=0;i--){
+    particles[i].update(); particles[i].draw(ctx);
+    if(particles[i].life<=0||particles[i].size<0.3) particles.splice(i,1);
+  }
+  requestAnimationFrame(animate);
+}
+animate();
+
+/* ================= 点击交互 ================= */
+let pressTimer=null, isLong=false, moved=false;
+
+function onDown(){
+  isLong=false; moved=false;
+  pressTimer=setTimeout(()=>{ isLong=true; openSetup(); }, 600);
+}
+function onMove(){ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } moved=true; }
+function onUp(e){
+  if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; }
+  if(isLong||moved) return;
+  // 必须是点在爱心区域内才响应
+  const r=canvas.getBoundingClientRect();
+  const tx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+  const ty=(e.touches?e.touches[0].clientY:e.clientY)-r.top;
+  if(Math.sqrt((tx-cx)**2+(ty-cy)**2) > baseScale*1.35) return;
+
+  if(stage===0){ stage=1; reveal=0; burst(cx,cy-10,20); ensureMusic(); }
+  else if(stage===1){ stage=2; reveal=0; burst(cx,cy-10,30); }
+  else { stage=0; reveal=1; burst(cx,cy,16); }
+  applyStage();
+}
+
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+canvas.addEventListener('touchstart', e=>{
+  if(e.target===canvas){ e.preventDefault(); onDown(); }
+}, {passive:false});
+canvas.addEventListener('touchmove', e=>{ if(e.target===canvas){ e.preventDefault(); onMove(); } }, {passive:false});
+canvas.addEventListener('touchend', e=>{ e.preventDefault(); onUp(e); }, {passive:false});
+
+/* ================= 设置面板 ================= */
+const mask=document.getElementById('setupMask');
+function openSetup(){
+  document.getElementById('in1').value = conf.l1===DEF.l1?'':conf.l1;
+  document.getElementById('in2').value = conf.l2===DEF.l2?'':conf.l2;
+  document.getElementById('in3').value = conf.author===DEF.author?'':conf.author.replace(/^——\s*/,'');
+  mask.classList.add('show');
+}
+function closeSetup(){ mask.classList.remove('show'); }
+function saveSetup(){
+  const raw1=document.getElementById('in1').value.trim();
+  const raw2=document.getElementById('in2').value.trim();
+  const v1 = raw1==='' ? DEF.l1 : raw1;
+  const v2 = raw2==='' ? DEF.l2 : raw2;
+  let v3=document.getElementById('in3').value.trim();
+  if(v3 && !/^——/.test(v3)) v3='—— '+v3;
+  v3 = v3 || DEF.author;
+  conf={ l1:v1, l2:v2, author:v3 };
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(conf)); }catch(e){}
+  applyStage();
+  closeSetup();
+}
+document.getElementById('btnSave').onclick=saveSetup;
+document.getElementById('btnCancel').onclick=closeSetup;
+mask.addEventListener('click', e=>{ if(e.target===mask) closeSetup(); });
+applyStage();
+
+/* ================= 背景音乐（WebAudio 合成，无需外部文件） ================= */
+let AC=null, master=null, seqTimer=null, musicOn=true;
+const musicBtn=document.getElementById('musicBtn');
+const musicHint=document.getElementById('musicHint');
+
+// 主旋律：C 大调，对应文案情绪「我喜欢你 → 做我女朋友好不好」
+// 音符：音名 -> 频率
+const NOTE={ C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392.00,A4:440.00,B4:493.88,
+  C5:523.25,D5:587.33,E5:659.25,F5:698.46,G5:783.99,A5:880.00,
+  E3:164.81,G3:196.00,B3:246.94,C3:130.81 };
+// 旋律序列 [音符, 时值(拍)]  4/4, 一拍 ≈ 430ms
+const MELODY=[
+  ['E4',2],['G4',2],['A4',2],['G4',2],
+  ['C5',3],['A4',1],['G4',2],['E4',2],
+  ['F4',2],['G4',2],['E4',2],['D4',2],
+  ['E4',4],
+  ['G4',2],['A4',2],['C5',2],['A4',2],
+  ['G4',2],['E4',2],['D4',2],['E4',2],
+  ['C4',3],['D4',1],['E4',4]
+];
+const BPM=100, BEAT=60000/BPM; // 一拍时长
+
+function noteToFreq(n){ return NOTE[n] || 0; }
+
+function playNote(freq, dur, type, vol){
+  if(!AC||!musicOn||freq<=0) return;
+  const t=AC.currentTime;
+  const osc=AC.createOscillator();
+  const g=AC.createGain();
+  osc.type=type||'triangle';
+  osc.frequency.value=freq;
+  // 包络
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+dur*0.95);
+  osc.connect(g); g.connect(master);
+  osc.start(t); osc.stop(t+dur);
+  osc.onended=()=>{ try{ g.disconnect(); osc.disconnect(); }catch(e){} };
+}
+
+function playChord(freqs, dur, vol){
+  freqs.forEach(f=>{ if(f>0) playNote(f,dur,'sine',vol*0.5); });
+}
+
+function scheduleMelody(){
+  if(seqTimer) return;
+  let i=0;
+  function next(){
+    if(!musicOn){ seqTimer=null; return; }
+    const item=MELODY[i%MELODY.length];
+    const freq=noteToFreq(item[0]), beats=item[1];
+    const dur=BEAT*beats/1000;
+    // 旋律音
+    playNote(freq, dur, 'triangle', 0.22);
+    // 低音陪伴
+    playNote(freq/2, dur, 'sine', 0.12);
+    // 每小节首拍加一个和弦铺底
+    if(i%4===0) playChord([freq/2, freq, freq*1.5], BEAT*4/1000, 0.14);
+    // 偶拍轻轻的"心跳"贝斯
+    if(i%2===1) playNote(98.0, BEAT*0.5/1000, 'sine', 0.1);
+    i++;
+    seqTimer=setTimeout(next, BEAT*beats*0.98);
+  }
+  next();
+}
+
+function initAudio(){
+  if(AC) return;
+  try{
+    const w=window;
+    AC=new (w.AudioContext||w.webkitAudioContext)();
+    master=AC.createGain();
+    master.gain.value=0.85;
+    // 轻柔低通，更温暖
+    const lp=AC.createBiquadFilter();
+    lp.type='lowpass'; lp.frequency.value=2600; lp.Q.value=0.7;
+    master.connect(lp); lp.connect(AC.destination);
+    master=lp; // 后续节点挂到 filter 后
+  }catch(e){ AC=null; }
+}
+
+function ensureMusic(){
+  initAudio();
+  if(AC && AC.state==='suspended') AC.resume();
+  musicHint.style.display='none';
+  scheduleMelody();
+}
+
+function toggleMusic(){
+  musicOn=!musicOn;
+  musicBtn.classList.toggle('off', !musicOn);
+  musicBtn.textContent = musicOn ? '🎵' : '🔇';
+  if(musicOn){ ensureMusic(); }
+  else if(AC){ try{ AC.suspend(); }catch(e){} }
+}
+musicBtn.onclick=()=>{ toggleMusic(); };
+
+// 首次交互后启动音乐（浏览器策略要求）
+window.addEventListener('click', ensureMusic, { once:true });
+window.addEventListener('touchstart', ensureMusic, { once:true });
+
+// 自动尝试播放（多数浏览器会先静音/等待交互，用户一点爱心立刻响起）
+window.addEventListener('load', ()=>{
+  setTimeout(()=>{ if(!AC) ensureMusic(); }, 500);
+});
+
+/* ================= 欢迎粒子 ================= */
+window.addEventListener('load', ()=> setTimeout(()=> burst(W/2, H*0.42, 28), 350));
+
+/* ================= Service Worker ================= */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
